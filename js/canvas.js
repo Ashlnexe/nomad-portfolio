@@ -97,6 +97,7 @@ export class WorkCanvas {
     this.spread = 1;
 
     this.videos = WORKS.map(w => {
+      if (!w.src) return null;             // placeholder slot — no media
       const v = document.createElement('video');
       // a phone gets the 640-wide set: 3.2 MB instead of 13, and a frame the
       // hardware decoder can actually keep up with
@@ -246,14 +247,14 @@ export class WorkCanvas {
     };
     this._raf = requestAnimationFrame(loop);
     document.addEventListener('visibilitychange', this._vis = () => {
-      if (document.hidden) this.videos.forEach(v => v.pause());
-      else this.playing.forEach((p, i) => { if (p) this.videos[i].play().catch(()=>{}); });
+      if (document.hidden) this.videos.forEach(v => v && v.pause());
+      else this.playing.forEach((p, i) => { if (p && this.videos[i]) this.videos[i].play().catch(()=>{}); });
     });
   }
   stop(){
     this.running = false;
     cancelAnimationFrame(this._raf);
-    this.videos.forEach(v => v.pause());
+    this.videos.forEach(v => v && v.pause());
     this.playing.fill(false);
     if (this._vis) document.removeEventListener('visibilitychange', this._vis);
   }
@@ -360,24 +361,74 @@ export class WorkCanvas {
     // only decode what is actually on the plane in front of someone
     for (let n = 0; n < this.videos.length; n++){
       const v = this.videos[n];
+      if (!v) continue;                    // placeholder slot — nothing to play
       if (need[n] && !this.playing[n]){ this.playing[n] = true; v.play().catch(()=>{}); }
       else if (!need[n] && this.playing[n]){ this.playing[n] = false; v.pause(); }
     }
   }
 
   paintWork(c, i, x, y){
-    const v = this.videos[i];
+    const v    = this.videos[i];
+    const work = WORKS[i];
     const w = this.tileW, h = this.tileH;
-    if (v.readyState >= 2 && v.videoWidth){
-      // cover
+
+    if (v && v.readyState >= 2 && v.videoWidth){
+      // cover-fit the video frame
       const ar = v.videoWidth / v.videoHeight, tr = w / h;
       let sw = v.videoWidth, sh = v.videoHeight, sx = 0, sy = 0;
       if (ar > tr){ sw = v.videoHeight * tr; sx = (v.videoWidth - sw) / 2; }
       else { sh = v.videoWidth / tr; sy = (v.videoHeight - sh) / 2; }
       c.drawImage(v, sx, sy, sw, sh, x, y, w, h);
     } else {
-      c.fillStyle = '#f2f1f4';
+      /* ── placeholder tile ─────────────────────────────────────────────
+         A two-stop gradient fills the tile; a hollow play-icon and the
+         project title sit at the centre. Intentionally minimal so the
+         real content reads as content when it arrives. */
+      const rx = Math.round(w * 0.045);   // corner radius
+
+      // background gradient (light warm cream → cool off-white)
+      const grd = c.createLinearGradient(x, y, x + w, y + h);
+      grd.addColorStop(0,   '#ede9e4');
+      grd.addColorStop(1,   '#f5f3f0');
+      c.save();
+      if (c.roundRect){
+        c.beginPath(); c.roundRect(x, y, w, h, rx); c.clip();
+      }
+      c.fillStyle = grd;
       c.fillRect(x, y, w, h);
+
+      // subtle border
+      c.strokeStyle = 'rgba(17,16,20,0.10)';
+      c.lineWidth   = 1;
+      if (c.roundRect){
+        c.beginPath(); c.roundRect(x, y, w, h, rx); c.stroke();
+      } else {
+        c.strokeRect(x, y, w, h);
+      }
+
+      // hollow play triangle
+      const pr = Math.round(w * 0.095);   // play icon size
+      const pcx = x + w / 2 - pr * 0.06, pcy = y + h * 0.42;
+      c.strokeStyle = 'rgba(17,16,20,0.22)';
+      c.lineWidth   = Math.max(1, Math.round(w * 0.022));
+      c.lineJoin    = 'round';
+      c.beginPath();
+      c.moveTo(pcx - pr * 0.72, pcy - pr);
+      c.lineTo(pcx + pr,        pcy);
+      c.lineTo(pcx - pr * 0.72, pcy + pr);
+      c.closePath();
+      c.stroke();
+
+      // title
+      if (work && work.title){
+        const sz = Math.round(clamp(w * 0.075, 10, 18));
+        c.fillStyle    = 'rgba(17,16,20,0.35)';
+        c.font         = `400 ${sz}px "SF Pro Display", -apple-system, Helvetica, Arial, sans-serif`;
+        c.textAlign    = 'center';
+        c.textBaseline = 'alphabetic';
+        c.fillText(work.title, x + w / 2, y + h * 0.42 + pr * 1.72);
+      }
+      c.restore();
     }
   }
 
