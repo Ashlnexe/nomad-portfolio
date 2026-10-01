@@ -11,8 +11,173 @@ let ipodModel = null, camModel = null;   // in flight from the moment it is
 
 const $ = id => document.getElementById(id);
 const body      = document.body;
-const markWrap  = $('mark');
-const markVideo = $('markVideo');
+const markWrap   = $('mark');
+const markCanvas = $('markCanvas');
+
+/* ── canvas mark (draws animated "J") ─────────────────────────────────── */
+function createMarkCanvas(){
+  const cv = markCanvas || document.createElement('canvas');
+
+  // DPR-aware sizing — the CSS width is min(42vh,42vw)
+  function resize(){
+    const cssW = cv.offsetWidth || Math.min(window.innerHeight, window.innerWidth) * 0.42;
+    const cssH = cssW;                       // square canvas
+    const dpr  = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width  = Math.round(cssW * dpr);
+    cv.height = Math.round(cssH * dpr);
+    cv.style.width  = cssW + 'px';
+    cv.style.height = cssH + 'px';
+  }
+  resize();
+  window.addEventListener('resize', resize, { passive: true });
+
+  return cv;
+}
+
+/**
+ * Draw the letter "j" as an animated SVG-path-style stroke on `cv`.
+ * Returns a Promise that resolves when the animation is done (~5 s).
+ * The timing is designed to match the original mark.mp4 duration.
+ */
+function animateMarkJ(cv, reducedMotion){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const ctx = cv.getContext('2d');
+
+  // Ink colour — matches --ink (#111014) with multiply blend
+  const INK = '#111014';
+
+  // Total duration in ms, matching the mp4 fallback clocks in main()
+  const TOTAL = reducedMotion ? 900 : 5200;
+
+  // Phase timings (normalised 0-1)
+  // 1. Dot appears     0.00 – 0.12
+  // 2. Stem draws down 0.12 – 0.55
+  // 3. Hook draws      0.55 – 0.80
+  // 4. Hold            0.80 – 0.92
+  // 5. Orbit asterisk  0.92 – 1.00 (subtle, matches the mp4 closing motif)
+  const P_DOT_END   = 0.12;
+  const P_STEM_END  = 0.55;
+  const P_HOOK_END  = 0.80;
+  const P_HOLD_END  = 0.92;
+
+  const easeOut  = t => 1 - Math.pow(1 - t, 3);
+  const clamp01  = t => t < 0 ? 0 : t > 1 ? 1 : t;
+  const norm     = (t, a, b) => clamp01((t - a) / (b - a));
+
+  return new Promise(resolve => {
+    const t0 = performance.now();
+    let raf;
+
+    function frame(now){
+      const elapsed = now - t0;
+      const p = Math.min(1, elapsed / TOTAL);
+
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const cx = W / 2;
+      // J proportions (in canvas units)
+      const capH = H * 0.60;          // cap-height  (top of stem)
+      const base = H * 0.72;          // baseline
+      const stemX = cx + W * 0.05;    // stem is slightly right of centre
+      const dotY  = H * 0.18;         // dot sits above the stem top
+      const stemTop = H * 0.26;       // top of the stroke
+      const hookR = W * 0.13;         // radius of the J hook
+      const hookCy = base;            // hook arc centre Y = baseline
+      const hookCx = stemX - hookR;   // hook arc centre X
+
+      const LINE_W = W * 0.055;       // stroke weight
+
+      ctx.lineCap  = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = LINE_W;
+
+      // ── 1. dot (scale in) ────────────────────────────────────────────
+      const pDot = easeOut(norm(p, 0, P_DOT_END));
+      if (pDot > 0){
+        const dotR = W * 0.045 * pDot;
+        ctx.save();
+        ctx.globalAlpha = pDot;
+        ctx.fillStyle = INK;
+        ctx.beginPath();
+        ctx.arc(stemX, dotY, dotR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // ── 2. stem (draw downward) ───────────────────────────────────────
+      const pStem = easeOut(norm(p, P_DOT_END, P_STEM_END));
+      if (pStem > 0){
+        const stemEnd = stemTop + (base - stemTop) * pStem;
+        ctx.beginPath();
+        ctx.moveTo(stemX, stemTop);
+        ctx.lineTo(stemX, stemEnd);
+        ctx.stroke();
+      }
+
+      // ── 3. hook (arc from baseline leftward & up) ─────────────────────
+      const pHook = easeOut(norm(p, P_STEM_END, P_HOOK_END));
+      if (pHook > 0){
+        // arc: start at bottom of stem (stemX, base) going clockwise
+        // to the left; ends pointing slightly upward at ~200° of travel
+        const startAngle = 0;                         // 3 o'clock (right)
+        const endAngle   = Math.PI * (1 + 0.18);     // ~198° arc
+        const sweep      = endAngle * pHook;
+
+        // draw the full stem again so there's no gap at the join
+        ctx.beginPath();
+        ctx.moveTo(stemX, stemTop);
+        ctx.lineTo(stemX, base);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(hookCx, hookCy, hookR, startAngle, startAngle + sweep, false);
+        ctx.stroke();
+      }
+
+      // ── 4. hold / subtle orbit asterisk ──────────────────────────────
+      // Draw the completed J during hold and orbit phases
+      if (p >= P_STEM_END){
+        ctx.beginPath();
+        ctx.moveTo(stemX, stemTop);
+        ctx.lineTo(stemX, base);
+        ctx.stroke();
+      }
+      if (p >= P_HOOK_END){
+        ctx.beginPath();
+        ctx.arc(hookCx, hookCy, hookR, 0, Math.PI * (1 + 0.18), false);
+        ctx.stroke();
+
+        // subtle orbiting asterisk (matches the end motif of the original mp4)
+        const pOrbit = norm(p, P_HOLD_END, 1);
+        if (pOrbit > 0){
+          const angle  = pOrbit * Math.PI * 2 - Math.PI / 2;
+          const oR     = W * 0.31;
+          const ax     = cx + Math.cos(angle) * oR;
+          const ay     = H * 0.50 + Math.sin(angle) * oR;
+          const aSize  = W * 0.040 * easeOut(clamp01(pOrbit * 6));
+          ctx.save();
+          ctx.globalAlpha = 0.55 * easeOut(clamp01(pOrbit * 4));
+          ctx.font = `${Math.round(aSize * 2)}px Helvetica, Arial, sans-serif`;
+          ctx.fillStyle = INK;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('*', ax, ay);
+          ctx.restore();
+        }
+      }
+
+      if (p < 1){
+        raf = requestAnimationFrame(frame);
+      } else {
+        resolve();
+      }
+    }
+
+    raf = requestAnimationFrame(frame);
+  });
+}
 const glCanvas  = $('gl');
 const workWrap  = $('work');
 const hint      = $('hint');
@@ -79,8 +244,6 @@ function armGlobalGesture(){
   if (audioArmed) return;
   audioArmed = true;
   const go = async () => {
-    // the same gesture that lights the track can start a refused mark
-    if (!markWrap.hidden && markVideo.paused) markVideo.play().catch(() => {});
     const ok = await goAudible();
     if (ok){
       window.removeEventListener('pointerdown', go);
@@ -223,36 +386,15 @@ async function main(){
   }
 
   /* ── the mark ─────────────────────────────────────────────────────────
-     Three ways this fails on a phone and none of them are visible on a desk:
-     autoplay refused outright (Low Power Mode does this, so does turning off
-     Auto-Play Video Previews), the decoder busy with something else, or the
-     clip simply never getting a frame out in time. The poster covers the look
-     of all three — the mark is fully drawn in frame 0 — and the clock below
-     covers the wait, so nobody stares at a still logo for five and a half
-     seconds because their battery is low. */
+     The original mark.mp4 showed the letter "n". It has been replaced with
+     a canvas-drawn animation of the letter "j" with identical timing and
+     lifecycle hooks. */
   // On the lite path the films start ARRIVING under the mark but must not
   // start PLAYING under it — see workHeld.
   if (LITE){ workHeld = true; setTimeout(ensureWork, 2600); }
 
-  const rollMark = () => markVideo.play().catch(() => {});
-  rollMark();
-  const markDone = new Promise(res => {
-    let fired = false;
-    const go = () => { if (!fired){ fired = true; res(); } };
-    markVideo.addEventListener('ended', go, { once:true });
-    const full = setTimeout(go, reduced ? 900 : 5600);   // never hang on a stall
-    // did it actually start? currentTime is the only honest answer — readyState
-    // and the play() promise both lie when the decoder is merely busy.
-    setTimeout(() => {
-      if (markVideo.currentTime > 0.08) return;          // rolling, leave it be
-      rollMark();                                        // one more try
-      setTimeout(() => {
-        if (markVideo.currentTime > 0.08) return;
-        clearTimeout(full);
-        go();                                            // hold the still, move on
-      }, 700);
-    }, reduced ? 200 : 1400);
-  });
+  const markCv   = createMarkCanvas();
+  const markDone = animateMarkJ(markCv, reduced);
   await markDone;
   if (skipped) return;
 

@@ -26,10 +26,7 @@
          clip — the mark is already fully drawn there, the animation is the
          asterisk orbiting it — so a device that refuses to play video shows the
          mark rather than a blank screen. -->
-    <video class="mark__v" id="markVideo" src="./assets/video/mark.mp4"
-           poster="./assets/video/mark-still.webp"
-           autoplay muted playsinline webkit-playsinline
-           preload="auto" disablepictureinpicture></video>
+    <canvas class="mark__v" id="markCanvas"></canvas>
   </div>
 
   <!-- ── stage 2/3 · webgl (ipod, then camera) ────────────────────────── -->
