@@ -182,7 +182,6 @@ const glCanvas  = $('gl');
 const workWrap  = $('work');
 const hint      = $('hint');
 const skipBtn   = $('skip');
-const theme     = $('theme');
 const vig       = $('vig');
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -198,63 +197,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const LITE = matchMedia('(pointer: coarse)').matches
              && !/[?&]full(&|=|$)/.test(location.search);
 
-/* ── audio ──────────────────────────────────────────────────────────────
-   Muted playback is always permitted, so the track is set rolling muted on
-   the first frame: it buffers, and the user's gesture only has to unmute.
-   goAudible() is single-flight — two overlapping attempts once corrupted the
-   saved mute state and left the track silent *and* paused. Never disarm
-   except on confirmed success. */
-theme.volume = 0;
-theme.muted = true;
-let audioArmed = false, audioBusy = false, audioOn = false;
-
-function rollMuted(){
-  theme.play().catch(() => { /* even muted can be refused; the gesture retries */ });
-}
-async function goAudible(){
-  if (audioOn || audioBusy) return audioOn;
-  audioBusy = true;
-  try {
-    theme.muted = false;
-    await theme.play();
-    audioOn = true;
-    // ease the level up rather than slamming it in
-    const t0 = performance.now();
-    const ramp = (now) => {
-      // rAF hands you the timestamp of the START of the frame, which can
-      // predate the performance.now() that scheduled it — an unclamped p goes
-      // negative, the cube flips sign, and setting a negative volume throws.
-      const p = Math.max(0, Math.min(1, (now - t0) / 1400));
-      theme.volume = 0.42 * (1 - Math.pow(1 - p, 3));
-      if (p < 1) requestAnimationFrame(ramp);
-    };
-    requestAnimationFrame(ramp);
-  } catch (err) {
-    theme.muted = true;
-    theme.volume = 0;
-    rollMuted();                       // keep buffering, stay armed
-  } finally {
-    audioBusy = false;
-  }
-  return audioOn;
-}
-// a late safety net: if the intro was skipped by an odd path, any first
-// gesture still lights the track. Removed only on confirmed success.
-function armGlobalGesture(){
-  if (audioArmed) return;
-  audioArmed = true;
-  const go = async () => {
-    const ok = await goAudible();
-    if (ok){
-      window.removeEventListener('pointerdown', go);
-      window.removeEventListener('keydown', go);
-      window.removeEventListener('touchend', go);
-    }
-  };
-  window.addEventListener('pointerdown', go);
-  window.addEventListener('keydown', go);
-  window.addEventListener('touchend', go);
-}
 
 /* ── routing ────────────────────────────────────────────────────────── */
 const pages = { about: $('pageAbout'), contact: $('pageContact') };
@@ -356,8 +298,7 @@ const vignetteDriver = {
 };
 
 async function main(){
-  armGlobalGesture();
-  rollMuted();
+
 
   // fonts must be resident before anything paints canvas type
   try {
@@ -443,7 +384,7 @@ async function main(){
     if (travelled > 7) return;                       // that was a turn
     if (!ipod.press(e.clientX, e.clientY)) return;
     glCanvas.classList.remove('is-hot');
-    await goAudible();
+
     toCamera();
   };
   glCanvas.addEventListener('pointerup', lift);
@@ -539,7 +480,7 @@ skipBtn.addEventListener('click', async () => {
   skipped = true;
   markWrap.classList.add('is-out');
   markWrap.hidden = true;
-  await goAudible();
+
   finish();
 });
 

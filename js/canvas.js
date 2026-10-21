@@ -30,25 +30,33 @@ const MAX_DECODE = COARSE ? 3 : 99;   // concurrent hardware decoders to ask for
 const TAP        = COARSE ? 12 : 8;   // a finger wanders; a mouse does not
 
 /* ── the repeating block ────────────────────────────────────────────────
-   Four columns, three rows, two slots deliberately left empty so the plane
-   breathes. Per-column vertical offsets break the rows without breaking the
-   tiling — a constant offset per column repeats cleanly. */
-const COLS = 4, ROWS = 3;
+   Five columns, four rows — enough room for all fifteen films plus the two
+   text cards, with three deliberate blanks so the plane breathes. Per-column
+   vertical offsets break the rows without breaking the tiling — a constant
+   offset per column repeats cleanly. */
+const COLS = 5, ROWS = 4;
 const COL_GAP = 0.34, ROW_GAP = 0.42;
 const TILE_AR = 9 / 16;
-const COL_OFF = [0, 0.30, 0.12, 0.44];
+const COL_OFF = [0, 0.30, 0.12, 0.44, 0.22];
 
 const SLOTS = [
   { c:0, r:0, kind:'work', i:0 },
   { c:1, r:0, kind:'work', i:1 },
   { c:2, r:0, kind:'card', i:0 },
   { c:3, r:0, kind:'work', i:2 },
-  { c:0, r:1, kind:'work', i:3 },
+  { c:4, r:0, kind:'work', i:3 },
+  { c:0, r:1, kind:'work', i:4 },
   { c:1, r:1, kind:'card', i:1 },
-  { c:2, r:1, kind:'work', i:4 },
-  { c:3, r:1, kind:'work', i:5 },
-  { c:0, r:2, kind:'work', i:6 },
-  { c:2, r:2, kind:'work', i:7 }
+  { c:2, r:1, kind:'work', i:5 },
+  { c:3, r:1, kind:'work', i:6 },
+  { c:4, r:1, kind:'work', i:7 },
+  { c:0, r:2, kind:'work', i:8 },
+  { c:1, r:2, kind:'work', i:9 },
+  { c:2, r:2, kind:'work', i:10 },
+  { c:4, r:2, kind:'work', i:11 },
+  { c:0, r:3, kind:'work', i:12 },
+  { c:1, r:3, kind:'work', i:13 },
+  { c:3, r:3, kind:'work', i:14 }
 ];
 
 /* Edge softness. Real glass is sharp on axis and falls off toward the corner
